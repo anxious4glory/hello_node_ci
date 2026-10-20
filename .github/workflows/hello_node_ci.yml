@@ -1,12 +1,15 @@
 
-name: Node CI Pipeline
+name: Node CI/CD Pipeline
 
 on:
   push:
     branches:
       - master
-      - working
   workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   build-test:
@@ -15,17 +18,18 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests (if any)
+      - name: Run tests
         run: npm test --if-present
 
   docker-build-push:
@@ -35,7 +39,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -48,4 +52,54 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/hello-node:latest
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/hello-node:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/hello-node:latest
+
+  deploy-to-eks:
+    name: Deploy to AWS EKS
+    runs-on: ubuntu-latest
+    needs: docker-build-push
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EKS_CLUSTER: ${{ vars.EKS_CLUSTER }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region "$AWS_REGION" \
+            --name "$EKS_CLUSTER"
+
+      - name: Verify cluster access
+        run: kubectl get nodes
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f k8s/app.yaml
+
+      - name: Deploy new Docker image
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/hello-node:${{ github.sha }}
+        run: |
+          kubectl set image deployment/hello-node \
+            hello-node="$IMAGE"
+
+          kubectl rollout status deployment/hello-node \
+            --timeout=180s
+
+      - name: Verify deployment
+        run: |
+          kubectl get deployments
+          kubectl get pods
+          kubectl get services

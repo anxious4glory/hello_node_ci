@@ -1,0 +1,36 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-node
+  labels:
+    app: hello-node
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello-node
+  template:
+    metadata:
+      labels:
+        app: hello-node
+    spec:
+      containers:
+        - name: hello-node
+          image: dee111113/hello-node:latest
+          ports:
+            - containerPort: 3000
+          imagePullPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-node-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: hello-node
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
