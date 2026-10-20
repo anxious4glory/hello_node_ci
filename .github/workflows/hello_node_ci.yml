@@ -1,6 +1,20 @@
 
 name: Node CI/CD Pipeline
 
+
+env:
+  AWS_REGION: eu-north-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::755610386021:role/your-github-actions-role
+
 on:
   push:
     branches:
@@ -69,11 +83,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: eu-north-1
+      # - name: Configure AWS Credentials
+      #     uses: aws-actions/configure-aws-credentials@v4
+      #     with:
+      #       aws-region: eu-north-1        # Required — add this line
+      #       role-to-assume: arn:aws:iam::755610386021:role/your-github-actions-role
+            # OR use static credentials (less recommended):
+            # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
 
       - name: Configure kubectl
         run: |
