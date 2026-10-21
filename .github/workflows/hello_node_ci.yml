@@ -1,20 +1,6 @@
 
 name: Node CI/CD Pipeline
 
-
-env:
-  AWS_REGION: eu-north-1
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::755610386021:role/your-github-actions-role
-
 on:
   push:
     branches:
@@ -23,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   build-test:
@@ -75,6 +60,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: docker-build-push
 
+    permissions:
+      contents: read
+      id-token: write
+
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       EKS_CLUSTER: ${{ vars.EKS_CLUSTER }}
@@ -83,15 +72,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      # - name: Configure AWS Credentials
-      #     uses: aws-actions/configure-aws-credentials@v4
-      #     with:
-      #       aws-region: eu-north-1        # Required — add this line
-      #       role-to-assume: arn:aws:iam::755610386021:role/your-github-actions-role
-            # OR use static credentials (less recommended):
-            # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-            # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Validate AWS configuration
+        run: |
+          test -n "$AWS_REGION" || {
+            echo "AWS_REGION repository variable is missing"
+            exit 1
+          }
+          test -n "$EKS_CLUSTER" || {
+            echo "EKS_CLUSTER repository variable is missing"
+            exit 1
+          }
 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
 
       - name: Configure kubectl
         run: |
@@ -103,8 +102,7 @@ jobs:
         run: kubectl get nodes
 
       - name: Apply Kubernetes manifests
-        run: |
-          kubectl apply -f k8s/app.yaml
+        run: kubectl apply -f k8s/app.yaml
 
       - name: Deploy new Docker image
         env:
